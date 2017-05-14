@@ -1,0 +1,8 @@
+main
+{
+	fileName = "mesh.txt";
+	dimensions = 1; //1 = 1D cable, 2 = 2D sheet (isotropic)
+	n_cables = 1;
+	n_per_cable = 8;
+	diameter_dad = 	6; //If 1D number of DAD cells, if 2D diameter of DAD cell circle (even integer)
+}

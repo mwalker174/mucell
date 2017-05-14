@@ -1,0 +1,338 @@
+#include "PIO.h"
+
+
+#include <cassert>
+#include <fstream>
+#include <numeric>
+
+
+namespace pio
+{
+
+
+const unsigned 
+StringData::limit_;
+
+static 
+void
+add_unsigned(char*& pointer, unsigned n)
+{
+
+	unsigned *unsigned_pointer = (unsigned*)(pointer);
+	*unsigned_pointer = n; unsigned_pointer++;
+	pointer = (char*)(unsigned_pointer);
+
+}
+
+static
+unsigned
+get_unsigned(const char*& pointer)
+{
+
+	unsigned *unsigned_pointer = (unsigned*)(pointer);
+	unsigned n = *unsigned_pointer; unsigned_pointer++;
+	pointer = (char*)(unsigned_pointer);
+	return n;
+
+}
+
+static 
+void
+add_string(char*& pointer, const std::string& s)
+{
+
+	unsigned n_str = s.length();
+	add_unsigned(pointer, n_str);
+	pointer = std::copy(s.c_str(), s.c_str() + n_str, pointer);
+  
+}
+
+
+static 
+void
+get_string(const char*& pointer, std::string& s)
+{
+
+	unsigned n_str = get_unsigned(pointer);
+	
+	char *str = new char[n_str + 1];
+	
+	std::copy(pointer, pointer + n_str, str);
+	str[n_str] ='\0';
+	pointer += n_str; 
+	s = str;
+	delete [] str;
+
+}
+
+
+void 
+StringData::
+add_data(unsigned index, std::string s)
+{
+	data_.push_back(std::make_pair(index, s));
+}
+
+
+void 
+StringData::
+clear()
+{
+	data_.clear();
+}
+
+
+unsigned
+StringData::
+create_buffer(std::vector<char>& buffer, list_type::iterator begin_iterator, list_type::iterator end_iterator)
+{
+
+	if(begin_iterator == end_iterator) return 0;
+
+	unsigned n_unsigned = 2;
+	assert(sizeof(char) == 1);
+
+	unsigned n_buffer = sizeof(unsigned); unsigned count = 0;
+	for(list_type::iterator it = begin_iterator; it != end_iterator; ++it){ 
+		n_buffer += it->second.length() + n_unsigned * sizeof(unsigned); 
+		count++;
+	}
+	buffer.resize(n_buffer);	
+
+	char *buffer_pointer = (char*)(&buffer[0]);
+	add_unsigned(buffer_pointer, count); 
+
+
+	unsigned buffer_size = 0;
+	for(list_type::iterator it = begin_iterator; it != end_iterator; ++it){ 
+
+		add_unsigned(buffer_pointer, it->first);
+		add_string(buffer_pointer, it->second);
+		
+	}
+
+	return n_buffer;
+
+}
+
+
+unsigned 
+StringData::
+get_n_data()
+{
+	unsigned n = data_.size();
+	unsigned result;
+	MPI_Allreduce(&n, &result, 1,
+								MPI_UNSIGNED, MPI_SUM, comm_);
+	return result;
+}
+
+
+void 
+StringData::
+send_data(MPI_Comm comm)
+{
+	
+	comm_ = comm;
+
+	unsigned n_all_data = this->get_n_data();
+	data_.sort();
+	std::list<std::vector<char> >  buffer(n_all_data / limit_ + 1);
+	std::list<std::vector<char> >::iterator buffer_it = buffer.begin();
+	std::vector<MPI_Request> req;
+	unsigned offset = 0; list_type::iterator end_iterator = data_.begin();
+	unsigned index = 0;
+	while(offset < n_all_data){
+		list_type::iterator offset_iterator = end_iterator;
+		unsigned threshold = offset + limit_;
+		while(end_iterator != data_.end() && (end_iterator->first < threshold)){			
+			++end_iterator;
+		}
+
+		{
+			unsigned n_buffer = create_buffer(*buffer_it, offset_iterator, end_iterator);
+			unsigned zero_rank_index = 0;
+			MPI_Request single_request;
+			MPI_Isend(&n_buffer, 1, MPI_UNSIGNED, zero_rank_index, 0, comm_, &single_request);
+			req.push_back(single_request);
+			if(n_buffer){
+				MPI_Isend(&(*buffer_it)[0], n_buffer, MPI_BYTE, zero_rank_index, 0, comm_, &single_request);
+				req.push_back(single_request);
+				++buffer_it;
+			}
+		}
+		offset += limit_;
+	}
+
+	if(req.size()){
+		MPI_Waitall(req.size(), &req[0], MPI_STATUSES_IGNORE);
+	}
+
+}
+
+
+
+void 
+StringData::
+receive_data(MPI_Comm comm, std::string file_name)
+{
+
+	comm_ = comm;
+
+	int size;
+	MPI_Comm_size(comm_, &size);
+
+
+	unsigned n_all_data = this->get_n_data();
+	data_.sort();
+	
+	std::ofstream file(file_name.c_str());
+	list_type::iterator end_iterator = data_.begin();
+	unsigned offset = 0;
+
+	while(offset < n_all_data){
+
+		//inserting data from the same process
+		list_type::iterator offset_iterator = end_iterator;
+		unsigned threshold = offset + limit_;
+		unsigned n_sort_buffer = std::min(n_all_data - offset, limit_);
+		list_type sort_buffer(n_sort_buffer); list_type::iterator sort_buffer_it = sort_buffer.begin();
+		while(end_iterator != data_.end() && (end_iterator->first < threshold)){	
+			*sort_buffer_it = *end_iterator;
+			++sort_buffer_it;
+			++end_iterator;
+		}
+
+		//receiving data from other processors
+		{
+
+			std::vector<unsigned> rank_size(size);
+			std::vector<MPI_Request> req(size);
+			unsigned req_index = 0;
+			for(int proc = 1; proc < size; proc++){
+				MPI_Irecv(&rank_size[req_index], 1, MPI_UNSIGNED, proc,
+									0, comm_, &req[req_index]);
+				req_index++;
+			}		
+			MPI_Waitall(req_index, &req[0], MPI_STATUSES_IGNORE);
+
+			unsigned n_nonzero = 0; 
+			for(int proc = 1; proc < size; proc++){
+				if(rank_size[proc - 1]){
+					n_nonzero++; 
+				}															 
+			}
+
+			std::vector<std::vector<char> > buffer(n_nonzero); 
+			req_index = 0; unsigned index = 0;
+			for(int proc = 1; proc < size; proc++){
+				if(rank_size[req_index] != 0){
+					std::vector<char>& v = buffer[index]; v.resize(rank_size[req_index]);
+					MPI_Irecv(&v[0], rank_size[req_index], MPI_BYTE, proc,
+										0, comm_, &req[index]);
+					index++;
+				}
+				req_index++;
+			}
+			MPI_Waitall(n_nonzero, &req[0], MPI_STATUSES_IGNORE);
+
+			req_index = 0; index = 0;
+			for(unsigned ii = 0; ii < n_nonzero; ii++){
+			 
+					std::vector<char>& v = buffer[ii];
+					this->extract_list_from_buffer(v, sort_buffer_it);
+			}
+			
+		}
+
+		//writing
+		sort_buffer.sort();
+		for(list_type::iterator it = sort_buffer.begin(); it != sort_buffer.end(); ++it){
+			file << it->second << std::endl;
+		}
+
+		offset += limit_;
+	}
+
+	file.close();
+}
+
+
+
+
+void 
+StringData::
+extract_list_from_buffer(const std::vector<char>& buffer, list_type::iterator& it)
+{
+
+	
+	const char *pointer = &buffer[0];	
+	unsigned length = get_unsigned(pointer);
+
+	for(unsigned ii = 0; ii < length; ii++){
+		
+		it->first = get_unsigned(pointer);
+		get_string(pointer, it->second);
+		++it;
+	
+	}
+	
+}
+
+
+ 
+void 
+PIO::init(MPI_Comm comm)
+{
+
+	comm_ = comm;
+	this->reset();
+  
+}
+
+
+void 
+PIO::reset()
+{
+	stream_.str("");
+}
+
+
+void 
+PIO::set_file_name(std::string file_name)
+{
+	file_name_ = file_name;
+}
+ 
+void 
+PIO::next(unsigned index)
+{
+	sd_.add_data(index, stream_.str());
+	this->reset();
+}
+
+void 
+PIO::close()
+{
+	this->commit();
+}
+
+
+void 
+PIO::commit()
+{
+
+
+	int rank;
+	MPI_Comm_rank(comm_, &rank);
+	if(rank == 0){
+		sd_.receive_data(comm_, file_name_);
+	} else {
+		sd_.send_data(comm_);
+	}
+	sd_.clear();
+	
+
+}
+
+}
