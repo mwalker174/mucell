@@ -1,0 +1,36 @@
+3D Canine Ventricular Myocyte Model
+(C) Copyright 2016 Johns Hopkins University School of Medicine
+3/28/2016
+
+=================
+COMPILING:
+
+-Run "make"
+-The Spirit_Wrapper class is very slow with Intel compilers due to templates. Use the GNU compiler if this is an issue.
+-Note "-fopenmp" and "-openmp" are compiler flags for GNU and Intel compilers, respectively
+
+=================
+RUNNING:
+
+-Set parameters in "params.txt"
+-Run "./stoch3d"
+
+=================
+OPENMP:
+
+-Model uses OpenMP for thread-level parallelization of CRU and SL compartment computations (#pragma statements in fcn.cc and mpi_master.cc)
+
+-Command for setting number of OpenMP threads:
+>> export OMP_NUM_THREADS=N
+This should usually be set to the number of CPU cores. If it is not set, OpenMP will automatically choose.
+
+-To check value:
+>> echo $OMP_NUM_THREADS
+
+OpenMP calls are at the #pragma statements in mpi_master.cc and fcn.cc
+
+=================
+OUTPUT:
+
+-Main output is in info.0.txt (includes states, currents, other_states)
+-FRU info and VTK files for Paraview will be put in directory "stochout" if it exists

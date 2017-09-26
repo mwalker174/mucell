@@ -1,0 +1,61 @@
+//All parameters must be in the stoch{} block
+//problemType = stoch; must be set
+//All other parameters must be set
+//Double-check for typos such as missing ;'s and ='s
+
+stoch {
+  problemType = stoch;
+
+  //Simulation parameters
+  t_final = 30000;
+  period_stim = 1000;
+  t_end_stim = 60000;
+  I_stim = -10000;
+
+  VClamp_Flag = 0;
+  VClamp_ClampV = 3;
+  VClamp_HoldV = -97;
+  VClamp_Freq = 1000;
+  VClamp_Duration = 50;
+
+  VClamp2_T1 = 0; 
+  VClamp2_T2 = 0;
+  VClamp2_ClampV = -10;
+
+  //Ion concentrations
+  Default_Cai = 0.1e-3;
+  Default_CaSR = 0.35;		//0.25 HF(-ISO)
+  Default_Nai = 10;		//10 HF(-ISO), 14 HF(+ISO), 10 Normal
+  clamp_nai = 1;
+  Cao = 2;
+  
+  //Beta-adrenergic and HF
+  beta_flag = 0;		//1(+ISO), 0 (-ISO)
+  mode2_frac = 0.02;		//0.02 (+ISO), 0 (-ISO)
+  ryr_kplus_scale = 1;		 //4 HF(+ISO), 1.5 HF(-ISO) or Normal(+ISO), 1.8 +H2O2
+  serca_kf_scale = 1; //0.5;		//0.5 (+ISO), 1 (-ISO), 2 HF(-ISO)
+  serca_vmax_scale = 1; //2;		//2 HF(+ISO), 0.4 HF(-ISO), 1 Normal
+
+  //HF 
+  ik1_scale = 1;	//0.5 HF, 1 Normal
+  ncx_scale = 1; 	//2 HF, 1 Normal
+  ito1_scale = 1.0;	//0.8 HF, 1.2 Normal
+  frac_orphan = 0;	//0.21 HF, 0 Normal
+  Acap = 1.534e-4; 	//1.534e-4 Always
+
+  //IKr scaling (for rapid pacing)
+  ikr_scale = 1;     	//2.5 4Hz(+ISO), 1 Norm/HF(-ISO)
+
+  //Ouabain parameters
+  nak_scale = 1;
+
+  //NCX localization (0.5 fit to Weber)
+  frac_ncx_sl = 0.5;
+
+  //Cell dimensions (25x20x50 full size)
+  NFRU_X =25;
+  NFRU_Y =20;
+  NFRU_Z =50;
+
+  rand_seed = 2633;
+}
